@@ -5,18 +5,15 @@ import pandas as pd
 import streamlit as st
 from datetime import datetime
 
-# =============================
-# Page config
-# =============================
 st.set_page_config(page_title="GZ PMO Portal (Local Demo)", layout="wide")
 
 # =============================
-# Excel column mapping (from your template)
+# Excel mapping
 # =============================
-SHEET_NAME = None  # default: first sheet
+# ✅ 关键修复：sheet_name=0 才表示“第一个sheet”
+SHEET_NAME = 0
 
-# Only P/C are in PPT scope (P=Project, C=Change). 
-PC_TYPES = {"P", "C"}
+PC_TYPES = {"P", "C"}  # only P/C are in PPT scope 
 
 COL_TYPE = "Cat."
 COL_NAME = "Name"
@@ -49,13 +46,6 @@ def safe_str(x) -> str:
 
 
 def to_ontrack_bucket(status_text: str) -> str:
-    """
-    Normalize status into PPT semantics: On Track / Minor / Significant. 
-    Demo mapping:
-      - if text contains 'significant' -> Significant
-      - if contains 'minor' -> Minor
-      - else -> On Track
-    """
     s = (status_text or "").strip().lower()
     if "significant" in s:
         return "Significant"
@@ -72,7 +62,6 @@ def rag_icon(status_bucket: str) -> str:
         return "🟡"
     if "significant" in s:
         return "🔴"
-    # fallback for raw excel statuses 
     if "completed" in s:
         return "✅"
     if "pending" in s:
@@ -83,7 +72,6 @@ def rag_icon(status_bucket: str) -> str:
 
 
 def parse_pct_from_text(text: str):
-    """Parse percent from narrative like 'Overall Progress (~60%)' in PPT style. """
     if not text:
         return None
     m = re.search(r"(\d{1,3})\s*%+", text)
@@ -95,9 +83,6 @@ def parse_pct_from_text(text: str):
 
 
 def _parse_date_fuzzy(x):
-    """
-    Parse Excel date values like 01/01/2026, 2026.12.10, Q2 2026, NA/TBD. 
-    """
     if x is None:
         return pd.NaT
     if isinstance(x, float) and np.isnan(x):
@@ -107,7 +92,6 @@ def _parse_date_fuzzy(x):
     if s == "" or s.lower() in {"na", "n/a", "tbd", "none"}:
         return pd.NaT
 
-    # Quarter formats: "Q2 2026"
     m = re.match(r"^Q([1-4])\s*([12]\d{3})$", s, flags=re.IGNORECASE)
     if m:
         q = int(m.group(1))
@@ -115,22 +99,36 @@ def _parse_date_fuzzy(x):
         month = {1: 1, 2: 4, 3: 7, 4: 10}[q]
         return pd.Timestamp(year=y, month=month, day=1)
 
-    # Standard parsing
     return pd.to_datetime(s, errors="coerce", dayfirst=False)
 
 
 @st.cache_data(show_spinner=False)
-def load_excel_to_df(file_bytes: bytes) -> pd.DataFrame:
-    return pd.read_excel(file_bytes, engine="openpyxl", sheet_name=SHEET_NAME)
+def load_excel_smart(file_obj) -> pd.DataFrame:
+    """
+    ✅ 关键修复：避免 pandas 返回 dict 导致 df.columns 报错
+    - 先读第一个sheet（sheet_name=0）
+    - 若返回 dict（某些情况下），自动挑含 Cat./Name 的sheet
+    """
+    obj = pd.read_excel(file_obj, engine="openpyxl", sheet_name=SHEET_NAME)
+
+    # 如果意外读成 dict（比如别处把 sheet_name=None），做兜底
+    if isinstance(obj, dict):
+        for _, d in obj.items():
+            if isinstance(d, pd.DataFrame) and (COL_TYPE in d.columns) and (COL_NAME in d.columns):
+                return d
+        # fallback: 取第一张
+        return list(obj.values())[0]
+
+    return obj
 
 
 def ensure_session():
     if "page" not in st.session_state:
-        st.session_state.page = "dashboard"  # Dashboard as landing
+        st.session_state.page = "dashboard"
     if "selected_key" not in st.session_state:
         st.session_state.selected_key = None
     if "updates" not in st.session_state:
-        st.session_state.updates = {}  # key -> dict
+        st.session_state.updates = {}
 
 
 def record_update(key: str, payload: dict):
@@ -141,15 +139,10 @@ def record_update(key: str, payload: dict):
 
 
 def merged_view(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Merge Excel baseline with in-app updates (session_state).
-    Strategy unchanged: Demo stage keeps updates in-session + exportable. 
-    """
     df2 = df.copy()
     df2["_type_norm"] = df2[COL_TYPE].apply(norm_type)
     df2["_key"] = df2["_type_norm"] + " | " + df2[COL_NAME].astype(str)
 
-    # Ensure extra columns exist for export
     for extra_col in [
         "_risk_mitigation", "_escalations", "_scope", "_progress_text",
         "_budget_approved", "_budget_committed", "_budget_spent", "_budget_forecast", "_budget_variance",
@@ -158,11 +151,9 @@ def merged_view(df: pd.DataFrame) -> pd.DataFrame:
         if extra_col not in df2.columns:
             df2[extra_col] = ""
 
-    # Apply updates
     for k, u in st.session_state.updates.items():
         mask = df2["_key"] == k
         if mask.any():
-            # Update status & followup back onto view
             if "status_bucket" in u:
                 df2.loc[mask, COL_STATUS] = u["status_bucket"]
             if "followup_action" in u:
@@ -183,13 +174,9 @@ def merged_view(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # =============================
-# Dashboard: Metrics + Health + Gantt Timeline
+# Dashboard
 # =============================
 def compute_dashboard_metrics(df_view: pd.DataFrame):
-    """
-    Mirrors PPT summary intent: Total / On-going / Risk + Health dims. 
-    Demo risk rule: Minor + Significant counted as risk (since Excel doesn't have risk severity field).
-    """
     scoped = df_view[df_view["_type_norm"].isin(PC_TYPES)].copy()  # P/C only 
     total = len(scoped)
 
@@ -201,21 +188,16 @@ def compute_dashboard_metrics(df_view: pd.DataFrame):
     risk_count = int(bucket.isin(["Minor", "Significant"]).sum())
 
     updated_count = int(scoped["_key"].isin(st.session_state.updates.keys()).sum())
-
     return total, ongoing_count, risk_count, updated_count
 
 
 def build_timeline_gantt_df(df_view: pd.DataFrame) -> pd.DataFrame:
-    """
-    Build Gantt dataframe from Excel Start/End, filtered to P/C only. 
-    """
     scoped = df_view[df_view["_type_norm"].isin(PC_TYPES)].copy()
     if COL_START not in scoped.columns or COL_END not in scoped.columns:
         return pd.DataFrame(columns=["Name", "Type", "Start", "End", "StatusBucket"])
 
     scoped["Start"] = scoped[COL_START].apply(_parse_date_fuzzy)
     scoped["End"] = scoped[COL_END].apply(_parse_date_fuzzy)
-
     scoped = scoped.dropna(subset=["Start", "End"])
     if scoped.empty:
         return pd.DataFrame(columns=["Name", "Type", "Start", "End", "StatusBucket"])
@@ -231,7 +213,7 @@ def build_timeline_gantt_df(df_view: pd.DataFrame) -> pd.DataFrame:
 
 def render_dashboard(df_view: pd.DataFrame):
     st.markdown("## 🏠 Dashboard（总览页）")
-    st.caption("总览结构对齐 PPT 总体状态页意图：Total / On-going / Risk + Health 维度。")
+    st.caption("总览结构对齐PPT总体状态页意图：Total / On-going / Risk + Health维度。")
 
     total, ongoing_count, risk_count, updated_count = compute_dashboard_metrics(df_view)
     c1, c2, c3, c4 = st.columns(4)
@@ -241,9 +223,8 @@ def render_dashboard(df_view: pd.DataFrame):
     c4.metric("Updated in Portal (session)", updated_count)
 
     st.divider()
-
     st.markdown("### ✅ Health Overview（与PPT维度一致）")
-    st.caption("Demo阶段先对齐维度与布局；后续你定数据模型后再接入真实计算口径。")
+    st.caption("Demo阶段先对齐结构；后续你定数据口径后再接入真实计算。")
     h1, h2, h3, h4, h5 = st.columns(5)
     h1.info("Schedule Health")
     h2.info("Budget Health")
@@ -251,13 +232,11 @@ def render_dashboard(df_view: pd.DataFrame):
     h4.info("Resource Health")
     h5.info("Quality Health")
 
-    # -------- Timeline Gantt band module --------
     st.divider()
     st.markdown("### 📅 Timeline（Gantt条带总览）")
-    st.caption("自动读取 Excel 的 Start date / End date 生成（仅 P/C）。用于呼应PPT底部Milestone/Timeline展示逻辑。")
+    st.caption("从Excel的 Start/End 自动生成（仅P/C），呼应PPT底部Timeline展示。")
 
     gantt_df = build_timeline_gantt_df(df_view)
-
     if gantt_df.empty:
         st.info("没有足够的起止日期可生成甘特（请确认 P/C 行有 Start date 与 End date）。")
     else:
@@ -290,26 +269,9 @@ def render_dashboard(df_view: pd.DataFrame):
             },
             "height": {"step": 18}
         }
-
         st.vega_lite_chart(spec, use_container_width=True)
-
         with st.expander("查看甘特数据（表格）"):
             st.dataframe(show, use_container_width=True, hide_index=True)
-
-    # -------- Attention list --------
-    st.divider()
-    st.markdown("### 🚨 Attention List（演示用）")
-    scoped = df_view[df_view["_type_norm"].isin(PC_TYPES)].copy()
-    scoped["StatusBucket"] = scoped[COL_STATUS].apply(to_ontrack_bucket)
-    scoped["NeedUpdate?"] = scoped["_key"].apply(lambda k: "✅" if k in st.session_state.updates else "⏳")
-    attention = scoped[(scoped["StatusBucket"].isin(["Minor", "Significant"])) | (scoped["NeedUpdate?"] == "⏳")].copy()
-
-    cols = [COL_TYPE, COL_NAME, COL_STATUS, "StatusBucket", "NeedUpdate?"]
-    cols = [c for c in cols if c in attention.columns]
-    if len(attention) == 0:
-        st.success("当前没有需要关注的条目（按演示口径）。")
-    else:
-        st.dataframe(attention[cols], use_container_width=True, hide_index=True)
 
     st.divider()
     if st.button("➡ Go to Portfolio（进入项目列表）", type="primary", use_container_width=True):
@@ -319,12 +281,9 @@ def render_dashboard(df_view: pd.DataFrame):
 
 
 # =============================
-# Detail (1:1 PPT layout) + Update
+# Detail (PPT layout) + Update
 # =============================
 def render_detail_ppt_layout(row: pd.Series, key: str):
-    """
-    Detail page is layout-driven to match PPT one-page template sections. 
-    """
     t = norm_type(row.get(COL_TYPE, ""))
     name = safe_str(row.get(COL_NAME, ""))
     sponsor = safe_str(row.get(COL_SPONSOR, ""))
@@ -345,7 +304,7 @@ def render_detail_ppt_layout(row: pd.Series, key: str):
     status_bucket = u.get("status_bucket", to_ontrack_bucket(status_raw))
     risk_mitigation = u.get("risk_mitigation", "")
     escalations = u.get("escalations", "")
-    scope = u.get("scope", desc)  # default scope uses Excel description 
+    scope = u.get("scope", desc)
     progress_text = u.get("progress_text", "")
     pct_guess = parse_pct_from_text(progress_text) if progress_text else None
 
@@ -361,13 +320,11 @@ def render_detail_ppt_layout(row: pd.Series, key: str):
     st.divider()
 
     col_left, col_right = st.columns([1, 1], gap="large")
-
     with col_left:
         st.markdown("### 🟦 Follow-up Action Plan")
         st.info(followup if followup else "—")
         st.markdown("### 📋 Project Scope")
         st.write(scope if scope else "—")
-
     with col_right:
         st.markdown("### 🟥 Risks & Mitigation Plan")
         st.warning(risk_mitigation if risk_mitigation else "—")
@@ -434,7 +391,7 @@ def render_update_form(row: pd.Series, key: str):
     default_budget_variance = u.get("budget_variance", "")
 
     st.markdown("## ✏ Update (PPT Modules)")
-    st.caption("更新按 PPT 模块拆分（Action/Risk/Scope/Progress/Budget），保持与一页PPT一致。")
+    st.caption("更新按PPT模块拆分（Action/Risk/Scope/Progress/Budget），保持一页PPT一致。")
 
     with st.form("update_form", clear_on_submit=False):
         status_bucket = st.selectbox(
@@ -501,14 +458,13 @@ def render_update_form(row: pd.Series, key: str):
 
 
 # =============================
-# App bootstrap
+# Bootstrap
 # =============================
 ensure_session()
 
 st.sidebar.title("GZ PMO Portal (Local Demo)")
 st.sidebar.caption("本地运行用于会议演示（避免外网URL被安全策略拦截）。")
 
-# Navigation
 st.sidebar.markdown("### Navigation")
 nav = st.sidebar.radio("Go to", ["Dashboard", "Portfolio"], index=0)
 target = "dashboard" if nav == "Dashboard" else "portfolio"
@@ -517,7 +473,6 @@ if st.session_state.page != target and st.sidebar.button("Open", use_container_w
     st.session_state.selected_key = None
     st.rerun()
 
-# Data Source
 st.sidebar.markdown("### Data Source")
 uploaded = st.sidebar.file_uploader("Upload Excel (Project Details bi-weekly update)", type=["xlsx"])
 use_sample = st.sidebar.checkbox("Use local file name if exists", value=True)
@@ -526,32 +481,28 @@ df = None
 error = None
 try:
     if uploaded is not None:
-        df = load_excel_to_df(uploaded)
+        df = load_excel_smart(uploaded)
     else:
         if use_sample:
-            # Put [Project Details bi-weekly update 2026.xlsx](https://beigeneo365apc.sharepoint.com/sites/MFGGZM/IT/GTS%20TechOps%20General/004_Project%20%26%20Delivery/001_Project%20Management%20Framework/01-GZ%20PMO/01-Project%20Management/Project%20Details%20bi-weekly%20update%202026.xlsx?web=1&EntityRepresentationId=b1ab1579-e942-4c00-92f2-af9de12e847e) next to app.py for demo. 
             local_path = "Project Details bi-weekly update 2026.xlsx"
-            df = pd.read_excel(local_path, engine="openpyxl", sheet_name=SHEET_NAME)
+            df = load_excel_smart(local_path)
 except Exception as e:
     error = str(e)
     df = None
 
 if df is None:
-    st.warning("请在左侧上传 Excel，或将 [Project Details bi-weekly update 2026.xlsx](https://beigeneo365apc.sharepoint.com/sites/MFGGZM/IT/GTS%20TechOps%20General/004_Project%20%26%20Delivery/001_Project%20Management%20Framework/01-GZ%20PMO/01-Project%20Management/Project%20Details%20bi-weekly%20update%202026.xlsx?web=1&EntityRepresentationId=b1ab1579-e942-4c00-92f2-af9de12e847e) 放在 app.py 同目录。")
+    st.warning("请在左侧上传 Excel，或将 Project Details bi-weekly update 2026.xlsx 放在 app.py 同目录。")
     if error:
         st.code(error)
     st.stop()
 
-# Validate required columns
 missing_cols = [c for c in [COL_TYPE, COL_NAME] if c not in df.columns]
 if missing_cols:
-    st.error(f"Excel 缺少必要列：{missing_cols}. 请确认使用的是 [Project Details bi-weekly update 2026.xlsx](https://beigeneo365apc.sharepoint.com/sites/MFGGZM/IT/GTS%20TechOps%20General/004_Project%20%26%20Delivery/001_Project%20Management%20Framework/01-GZ%20PMO/01-Project%20Management/Project%20Details%20bi-weekly%20update%202026.xlsx?web=1&EntityRepresentationId=b1ab1579-e942-4c00-92f2-af9de12e847e)。")
+    st.error(f"Excel 缺少必要列：{missing_cols}。请确认使用 Project Details bi-weekly update 2026.xlsx 的 Weekly project update 表。")
     st.stop()
 
-# Merge updates
 df_view = merged_view(df)
 
-# Filters
 st.sidebar.markdown("### Filters")
 show_only_pc = st.sidebar.checkbox("Only show Type P / C (PPT scope)", value=True)
 type_filter_default = ["P", "C"] if show_only_pc else sorted(df_view["_type_norm"].unique().tolist())
@@ -567,7 +518,6 @@ filtered = df_view[df_view["_type_norm"].isin(type_filter)]
 if status_filter:
     filtered = filtered[filtered[COL_STATUS].astype(str).isin(status_filter)]
 
-# Routing
 if st.session_state.page == "dashboard":
     render_dashboard(filtered)
 
@@ -603,11 +553,11 @@ elif st.session_state.page == "portfolio":
                 st.session_state.page = "update"
                 st.rerun()
         with c3:
-            st.caption("（会议演示建议：先Open Detail展示PPT布局，再点Update演示周会更新流程。）")
+            st.caption("（建议演示：先Open Detail展示PPT布局，再Update演示周会更新。）")
 
     st.divider()
     st.markdown("## ⬇ Export (Demo)")
-    st.caption("Demo阶段：更新先保存在系统会话中；可导出带更新字段的Excel供会后讨论。")
+    st.caption("Demo阶段：更新保存在会话中；可导出带更新字段的Excel供会后讨论。")
 
     export_df = df_view.copy()
     buf = io.BytesIO()
@@ -630,13 +580,12 @@ elif st.session_state.page == "detail":
     key = st.session_state.selected_key
     row_df = df_view[df_view["_key"] == key]
     if row_df.empty:
-        st.error("找不到选中的条目（可能筛选条件变化导致）。")
+        st.error("找不到选中的条目（可能筛选变化导致）。")
         st.session_state.page = "portfolio"
         st.session_state.selected_key = None
         st.rerun()
 
-    row = row_df.iloc[0]
-    render_detail_ppt_layout(row, key)
+    render_detail_ppt_layout(row_df.iloc[0], key)
 
 elif st.session_state.page == "update":
     if not st.session_state.selected_key:
@@ -646,13 +595,12 @@ elif st.session_state.page == "update":
     key = st.session_state.selected_key
     row_df = df_view[df_view["_key"] == key]
     if row_df.empty:
-        st.error("找不到选中的条目（可能筛选条件变化导致）。")
+        st.error("找不到选中的条目（可能筛选变化导致）。")
         st.session_state.page = "portfolio"
         st.session_state.selected_key = None
         st.rerun()
 
-    row = row_df.iloc[0]
-    render_update_form(row, key)
+    render_update_form(row_df.iloc[0], key)
 
 else:
     st.session_state.page = "dashboard"
