@@ -1,142 +1,253 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset="UTF-8">
-  <title>PMO Tool</title>
+<meta charset="UTF-8">
+<title>GZ PMO Portal</title>
+
+<style>
+body { font-family: Arial; margin: 20px; }
+table { border-collapse: collapse; width: 100%; }
+th, td { border: 1px solid #ccc; padding: 8px; }
+th { background: #eee; }
+button { padding: 5px 10px; margin: 5px; }
+.card { border: 1px solid #ccc; padding: 15px; margin-top: 20px; }
+.section { margin-bottom: 15px; }
+</style>
+
 </head>
 
 <body>
 
-<h2>🚨 Need Update</h2>
-<ul id="list"></ul>
+<h1>📊 GZ PMO Portal</h1>
 
-<hr>
+<div id="portfolio"></div>
 
-<h2>Submit Update</h2>
-
-<input id="issue" placeholder="Issue Number"><br>
-<input id="progress" placeholder="Progress %"><br>
-
-<select id="health">
-  <option>Green</option>
-  <option>Yellow</option>
-  <option>Red</option>
-</select><br>
-
-<textarea id="risks" placeholder="Risks"></textarea><br>
-<textarea id="next" placeholder="Next steps"></textarea><br>
-
-<button onclick="submitUpdate()">Submit</button>
+<div id="detail"></div>
 
 <script>
 
-// ✅ 配置（改这里）
-const OWNER = "你的org";
-const REPO = "你的repo";
-const TOKEN = "你的token";
+// ========== CONFIG ==========
+const OWNER = "RongtaiXiao";
+const REPO = "GZPMO";
+const TOKEN = "你的Token";
 
-// ✅ 获取 Issue
-async function getIssues() {
-  const res = await fetch(`https://api.github.com/repos/${OWNER}/${REPO}/issues`, {
-    headers: {
-      Authorization: "Bearer " + TOKEN
-    }
-  });
-  return await res.json();
-}
-
-// ✅ 获取评论
-async function getComments(issueNumber) {
-  const res = await fetch(
-    `https://api.github.com/repos/${OWNER}/${REPO}/issues/${issueNumber}/comments`,
-    {
-      headers: {
-        Authorization: "Bearer " + TOKEN
-      }
-    }
-  );
-  return await res.json();
-}
-
-// ✅ 判断是否需要更新
-function needUpdate(comments) {
-  if (comments.length === 0) return true;
-
-  const last = comments[comments.length - 1];
-
-  const lastDate = new Date(last.created_at);
-  const now = new Date();
-
-  const diffDays = (now - lastDate) / (1000 * 60 * 60 * 24);
-
-  return diffDays > 7;
-}
-
-// ✅ 渲染列表
-async function load() {
-
-  const issues = await getIssues();
-  const ul = document.getElementById("list");
-  ul.innerHTML = "";
-
-  for (let issue of issues) {
-
-    if (issue.state !== "open") continue;
-
-    const comments = await getComments(issue.number);
-    const need = needUpdate(comments);
-
-    const li = document.createElement("li");
-
-    li.innerHTML = need
-      ? "🔴 " + issue.title + " (#" + issue.number + ")"
-      : "🟢 " + issue.title + " (#" + issue.number + ")";
-
-    ul.appendChild(li);
+// ========== MOCK DATA（来自Excel结构）==========
+const projects = [
+  {
+    id: 1,
+    name: "WMS 2026 Release",
+    status: "On Track",
+    progress: 60,
+    issue: 1,
+    sponsor: "William Wang",
+    pm: "Rongtai Xiao",
+    business: "N/A",
+    golive: "2026-06-30",
+    risks: "NA",
+    actions: "QIOQ started",
+    budget: "60K"
+  },
+  {
+    id: 2,
+    name: "LIMS Enhancement",
+    status: "On Track",
+    progress: 30,
+    issue: 2,
+    sponsor: "William Wang",
+    pm: "Leo Sun",
+    business: "Xuanbin Huang",
+    golive: "2026-09-15",
+    risks: "Interface complexity",
+    actions: "URS drafting",
+    budget: "165K"
   }
+];
+
+// ========== PORTFOLIO（Excel界面） ==========
+function renderPortfolio() {
+
+  let html = `
+  <h2>📊 Portfolio</h2>
+  <table>
+    <tr>
+      <th>Project</th>
+      <th>Status</th>
+      <th>Progress</th>
+      <th>Go-live</th>
+      <th>Action</th>
+    </tr>`;
+
+  projects.forEach(p => {
+    html += `
+    <tr>
+      <td>${p.name}</td>
+      <td>${getColor(p.status)}</td>
+      <td>${p.progress}%</td>
+      <td>${p.golive}</td>
+      <td><button onclick="openDetail(${p.id})">Open</button></td>
+    </tr>`;
+  });
+
+  html += "</table>";
+
+  document.getElementById("portfolio").innerHTML = html;
 }
 
-// ✅ 提交 update
-async function submitUpdate() {
+// RAG颜色
+function getColor(status) {
+  if (status === "On Track") return "🟢";
+  if (status === "Minor") return "🟡";
+  return "🔴";
+}
 
-  const issue = document.getElementById("issue").value;
+// ========== DETAIL（PPT结构） ==========
+async function openDetail(id) {
+
+  const p = projects.find(x => x.id === id);
+
+  let comments = await getComments(p.issue);
+  let last = comments.length ? comments[comments.length - 1].body : "No update";
+
+  document.getElementById("detail").innerHTML = `
+  
+  <div class="card">
+    <h2>${p.name}</h2>
+
+    <div class="section">
+      <b>👤 Basic Info</b><br>
+      Sponsor: ${p.sponsor}<br>
+      GTS PM: ${p.pm}<br>
+      Business PM: ${p.business}
+    </div>
+
+    <div class="section">
+      <b>📊 Status</b><br>
+      ${getColor(p.status)} ${p.status}
+    </div>
+
+    <div class="section">
+      <b>📌 Progress</b><br>
+      ${p.progress}%<br>
+      Go-live: ${p.golive}
+    </div>
+
+    <div class="section">
+      <b>⚠ Risks</b><br>
+      ${p.risks}
+    </div>
+
+    <div class="section">
+      <b>▶ Action Plan</b><br>
+      ${p.actions}
+    </div>
+
+    <div class="section">
+      <b>💰 Budget</b><br>
+      ${p.budget}
+    </div>
+
+    <div class="section">
+      <b>📜 Last Update</b>
+      <pre>${last}</pre>
+    </div>
+
+    <button onclick="showUpdate(${p.id})">✏ Update</button>
+
+    <div id="updateForm"></div>
+
+  </div>
+  `;
+}
+
+// ========== UPDATE UI ==========
+function showUpdate(id) {
+
+  document.getElementById("updateForm").innerHTML = `
+  
+  <div class="card">
+    <h3>Update Project</h3>
+
+    Progress: <input id="progress"><br><br>
+
+    Status:
+    <select id="status">
+      <option>On Track</option>
+      <option>Minor</option>
+      <option>Significant</option>
+    </select><br><br>
+
+    Risks:<br>
+    <textarea id="risks" rows="3"></textarea><br><br>
+
+    Actions:<br>
+    <textarea id="actions" rows="3"></textarea><br><br>
+
+    <button onclick="submitUpdate(${id})">✅ Submit</button>
+  </div>
+  `;
+}
+
+// ========== SUBMIT ==========
+async function submitUpdate(id) {
+
+  const p = projects.find(x => x.id === id);
+
+  let progress = document.getElementById("progress").value;
+  let status = document.getElementById("status").value;
+  let risks = document.getElementById("risks").value;
+  let actions = document.getElementById("actions").value;
+
+  // 更新本地结构（你未来可以写回JSON/DB）
+  p.progress = progress;
+  p.status = status;
+  p.risks = risks;
+  p.actions = actions;
 
   const comment = `
-## 🔄 Bi-weekly Update
+## PMO Update
 
-- Progress: ${document.getElementById("progress").value}%
-- Health: ${document.getElementById("health").value}
+Progress: ${progress}%
+Status: ${status}
 
-### Risks
-${document.getElementById("risks").value}
+Risks:
+${risks}
 
-### Next
-${document.getElementById("next").value}
+Actions:
+${actions}
 `;
 
   await fetch(
-    `https://api.github.com/repos/${OWNER}/${REPO}/issues/${issue}/comments`,
+    `https://api.github.com/repos/${OWNER}/${REPO}/issues/${p.issue}/comments`,
     {
       method: "POST",
       headers: {
         Authorization: "Bearer " + TOKEN,
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({
-        body: comment
-      })
+      body: JSON.stringify({ body: comment })
     }
   );
 
   alert("✅ Updated");
 
-  load();
+  renderPortfolio();
 }
 
-load();
+// ========== GitHub ==========
+async function getComments(issue) {
+  const res = await fetch(
+    `https://api.github.com/repos/${OWNER}/${REPO}/issues/${issue}/comments`,
+    {
+      headers: { Authorization: "Bearer " + TOKEN }
+    }
+  );
+  return await res.json();
+}
+
+// 初始化
+renderPortfolio();
 
 </script>
 
 </body>
 </html>
-``
