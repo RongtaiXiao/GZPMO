@@ -6,11 +6,53 @@
 
 <style>
 body { font-family: Arial; margin: 20px; }
-table { border-collapse: collapse; width: 100%; }
-th, td { border: 1px solid #ccc; padding: 8px; }
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+th, td {
+  border: 1px solid #ccc;
+  padding: 8px;
+}
 th { background: #eee; }
-.card { border:1px solid #ccc; padding:15px; margin-top:20px;}
-button { padding:5px 10px; margin:5px;}
+
+.container {
+  border: 2px solid #333;
+  padding: 15px;
+}
+
+/* PPT layout */
+.section {
+  margin-top: 15px;
+  border: 1px solid #ccc;
+  padding: 10px;
+}
+
+.row {
+  display: flex;
+  gap: 10px;
+}
+
+.column {
+  flex: 1;
+  border: 1px solid #ccc;
+  padding: 10px;
+}
+
+.header {
+  font-weight: bold;
+  margin-bottom: 5px;
+}
+
+button {
+  padding: 5px 10px;
+  margin: 5px;
+}
+
+.hidden {
+  display: none;
+}
 </style>
 
 </head>
@@ -19,33 +61,32 @@ button { padding:5px 10px; margin:5px;}
 
 <h1>📊 GZ PMO Portal</h1>
 
-<div id="portfolio"></div>
-<div id="detail"></div>
+<!-- ✅ Portfolio -->
+<div id="portfolioPage"></div>
+
+<!-- ✅ Detail -->
+<div id="detailPage" class="hidden"></div>
 
 <script>
 
-const OWNER = "RongtaiXiao";
-const REPO = "GZPMO";
-const TOKEN = "你的Token";
-
-// ===== 模拟Excel数据（核心）=====
+// ===== 模拟Excel数据（来自你Excel结构）=====
 let projects = [
-  {id:1, type:"C", name:"WMS 2026 Release", status:"On Track", progress:60, issue:1},
-  {id:2, type:"C", name:"LIMS Enhancement", status:"On Track", progress:30, issue:2},
-  {id:3, type:"I", name:"Sox audit", status:"Pending", progress:0, issue:3}
+  {id:1, type:"C", name:"WMS 2026 Release", status:"On Track", progress:60},
+  {id:2, type:"C", name:"LIMS Enhancement", status:"On Track", progress:30},
+  {id:3, type:"I", name:"Sox audit", status:"Pending", progress:0}
 ];
 
-// ===== 只取 P / C =====
-function getValidProjects() {
+// ===== 过滤 P / C =====
+function validProjects() {
   return projects.filter(p => p.type === "P" || p.type === "C");
 }
 
-// ===== Portfolio =====
+// ===== 首页 =====
 function renderPortfolio() {
 
-  let data = getValidProjects();
+  let html = `
+  <h2>📋 Portfolio（仅 P / C）</h2>
 
-  let html = `<h2>Portfolio（P / C only）</h2>
   <table>
     <tr>
       <th>Type</th>
@@ -53,129 +94,165 @@ function renderPortfolio() {
       <th>Status</th>
       <th>Progress</th>
       <th>Action</th>
-    </tr>`;
+    </tr>
+  `;
 
-  data.forEach(p=>{
-    html+=`
-      <tr>
-        <td>${p.type}</td>
-        <td>${p.name}</td>
-        <td>${getColor(p.status)}</td>
-        <td>${p.progress}%</td>
-        <td><button onclick="openDetail(${p.id})">Open</button></td>
-      </tr>`;
+  validProjects().forEach(p => {
+    html += `
+    <tr>
+      <td>${p.type}</td>
+      <td>${p.name}</td>
+      <td>${color(p.status)}</td>
+      <td>${p.progress}%</td>
+      <td><button onclick="openDetail(${p.id})">Open</button></td>
+    </tr>`;
   });
 
-  html+="</table>";
+  html += "</table>";
 
-  document.getElementById("portfolio").innerHTML = html;
+  document.getElementById("portfolioPage").innerHTML = html;
 }
 
-// ===== Detail（PPT结构）=====
-async function openDetail(id){
+// ===== 打开Detail =====
+function openDetail(id) {
 
-  let p = projects.find(x=>x.id===id);
+  let p = projects.find(x => x.id === id);
 
-  let comments = await getComments(p.issue);
-  let last = comments.length ? comments[comments.length-1].body : "No update";
+  document.getElementById("portfolioPage").classList.add("hidden");
+  document.getElementById("detailPage").classList.remove("hidden");
 
-  document.getElementById("detail").innerHTML = `
-  
-  <div class="card">
-  <h2>${p.name}</h2>
+  document.getElementById("detailPage").innerHTML = renderDetailHTML(p);
+}
 
-  <b>Type:</b> ${p.type}<br>
-  <b>Status:</b> ${getColor(p.status)} ${p.status}<br>
-  <b>Progress:</b> ${p.progress}%<br>
+// ===== 返回 =====
+function backToPortfolio() {
+  document.getElementById("portfolioPage").classList.remove("hidden");
+  document.getElementById("detailPage").classList.add("hidden");
+}
 
-  <h3>📜 Last Update</h3>
-  <pre>${last}</pre>
+// ===== Detail（PPT布局）=====
+function renderDetailHTML(p) {
 
-  <button onclick="showUpdate(${p.id})">✏ Update</button>
+  return `
+  <button onclick="backToPortfolio()">← Back</button>
 
-  <div id="update"></div>
+  <div class="container">
+
+    <h2>Project: ${p.name}</h2>
+
+    <!-- Status -->
+    <div class="section">
+      <b>📊 Status:</b> ${color(p.status)} ${p.status}
+    </div>
+
+    <!-- Scope -->
+    <div class="section">
+      <div class="header">📋 Project Scope</div>
+      <ul>
+        <li>Scope from Excel/PPT</li>
+      </ul>
+    </div>
+
+    <!-- Progress -->
+    <div class="section">
+      <div class="header">📈 Overall Progress</div>
+      <ul>
+        <li>Design: 100%</li>
+        <li>Validation: ${p.progress}%</li>
+        <li><b>Total: ${p.progress}%</b></li>
+      </ul>
+    </div>
+
+    <!-- 中间核心（左右布局） -->
+    <div class="row">
+
+      <div class="column">
+        <div class="header">🟦 Follow-up Action Plan</div>
+        <ul>
+          <li>Action from update</li>
+        </ul>
+      </div>
+
+      <div class="column">
+        <div class="header">🟥 Risks & Mitigation</div>
+        <ul>
+          <li>No major risk</li>
+        </ul>
+      </div>
+
+    </div>
+
+    <!-- Budget -->
+    <div class="section">
+      <div class="header">💰 Budget</div>
+      <table>
+        <tr><td>Approved</td><td>60K</td></tr>
+        <tr><td>Committed</td><td>20K</td></tr>
+        <tr><td>Spent</td><td>0</td></tr>
+        <tr><td>Variance</td><td>0</td></tr>
+      </table>
+    </div>
+
+    <!-- Timeline -->
+    <div class="section">
+      <div class="header">📅 Timeline</div>
+      <div style="height:20px;background:#ddd;"></div>
+    </div>
+
+    <button onclick="showUpdate(${p.id})">✏ Update</button>
+
+    <div id="updatePanel"></div>
+
   </div>
   `;
 }
 
 // ===== Update UI =====
-function showUpdate(id){
+function showUpdate(id) {
 
-  document.getElementById("update").innerHTML=`
-  
-  <div class="card">
-  <h3>Update</h3>
+  document.getElementById("updatePanel").innerHTML = `
+    <div class="section">
 
-  Progress: <input id="progress"><br><br>
+    <h3>Update</h3>
 
-  Status:
-  <select id="status">
-    <option>On Track</option>
-    <option>Minor</option>
-    <option>Significant</option>
-  </select><br><br>
+    Status:
+    <select id="status">
+      <option>On Track</option>
+      <option>Minor</option>
+      <option>Significant</option>
+    </select><br><br>
 
-  Risks:<br>
-  <textarea id="risks"></textarea><br><br>
+    Progress:
+    <input id="progress"><br><br>
 
-  Actions:<br>
-  <textarea id="actions"></textarea><br><br>
+    Action Plan:
+    <textarea id="action"></textarea><br><br>
 
-  <button onclick="submitUpdate(${id})">Submit</button>
-  </div>
+    Risks:
+    <textarea id="risk"></textarea><br><br>
+
+    <button onclick="submitUpdate(${id})">Submit</button>
+
+    </div>
   `;
 }
 
 // ===== Submit =====
-async function submitUpdate(id){
+function submitUpdate(id) {
 
   let p = projects.find(x=>x.id===id);
 
-  let progress = document.getElementById("progress").value;
-  let status = document.getElementById("status").value;
-  let risks = document.getElementById("risks").value;
-  let actions = document.getElementById("actions").value;
-
-  p.progress = progress;
-  p.status = status;
-
-  const comment = `
-## PMO Update
-
-Progress: ${progress}
-Status: ${status}
-
-Risks:
-${risks}
-
-Actions:
-${actions}
-`;
-
-  await fetch(`https://api.github.com/repos/${OWNER}/${REPO}/issues/${p.issue}/comments`,{
-    method:"POST",
-    headers:{
-      Authorization:"Bearer "+TOKEN,
-      "Content-Type":"application/json"
-    },
-    body:JSON.stringify({body:comment})
-  });
+  p.status = document.getElementById("status").value;
+  p.progress = document.getElementById("progress").value;
 
   alert("✅ Updated");
 
+  openDetail(id);
   renderPortfolio();
 }
 
-// ===== GitHub =====
-async function getComments(issue){
-  let r = await fetch(`https://api.github.com/repos/${OWNER}/${REPO}/issues/${issue}/comments`,{
-    headers:{Authorization:"Bearer "+TOKEN}
-  });
-  return await r.json();
-}
-
 // ===== RAG =====
-function getColor(s){
+function color(s){
   if(s==="On Track") return "🟢";
   if(s==="Minor") return "🟡";
   return "🔴";
@@ -188,3 +265,4 @@ renderPortfolio();
 
 </body>
 </html>
+``
