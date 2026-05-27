@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>PMO Tool</title>
+</head>
+
+<body>
+
+<h2>🚨 Need Update</h2>
+<ul id="list"></ul>
+
+<hr>
+
+<h2>Submit Update</h2>
+
+<input id="issue" placeholder="Issue Number"><br>
+<input id="progress" placeholder="Progress %"><br>
+
+<select id="health">
+  <option>Green</option>
+  <option>Yellow</option>
+  <option>Red</option>
+</select><br>
+
+<textarea id="risks" placeholder="Risks"></textarea><br>
+<textarea id="next" placeholder="Next steps"></textarea><br>
+
+<button onclick="submitUpdate()">Submit</button>
+
+<script>
+
+// ✅ 配置（改这里）
+const OWNER = "你的org";
+const REPO = "你的repo";
+const TOKEN = "你的token";
+
+// ✅ 获取 Issue
+async function getIssues() {
+  const res = await fetch(`https://api.github.com/repos/${OWNER}/${REPO}/issues`, {
+    headers: {
+      Authorization: "Bearer " + TOKEN
+    }
+  });
+  return await res.json();
+}
+
+// ✅ 获取评论
+async function getComments(issueNumber) {
+  const res = await fetch(
+    `https://api.github.com/repos/${OWNER}/${REPO}/issues/${issueNumber}/comments`,
+    {
+      headers: {
+        Authorization: "Bearer " + TOKEN
+      }
+    }
+  );
+  return await res.json();
+}
+
+// ✅ 判断是否需要更新
+function needUpdate(comments) {
+  if (comments.length === 0) return true;
+
+  const last = comments[comments.length - 1];
+
+  const lastDate = new Date(last.created_at);
+  const now = new Date();
+
+  const diffDays = (now - lastDate) / (1000 * 60 * 60 * 24);
+
+  return diffDays > 7;
+}
+
+// ✅ 渲染列表
+async function load() {
+
+  const issues = await getIssues();
+  const ul = document.getElementById("list");
+  ul.innerHTML = "";
+
+  for (let issue of issues) {
+
+    if (issue.state !== "open") continue;
+
+    const comments = await getComments(issue.number);
+    const need = needUpdate(comments);
+
+    const li = document.createElement("li");
+
+    li.innerHTML = need
+      ? "🔴 " + issue.title + " (#" + issue.number + ")"
+      : "🟢 " + issue.title + " (#" + issue.number + ")";
+
+    ul.appendChild(li);
+  }
+}
+
+// ✅ 提交 update
+async function submitUpdate() {
+
+  const issue = document.getElementById("issue").value;
+
+  const comment = `
+## 🔄 Bi-weekly Update
+
+- Progress: ${document.getElementById("progress").value}%
+- Health: ${document.getElementById("health").value}
+
+### Risks
+${document.getElementById("risks").value}
+
+### Next
+${document.getElementById("next").value}
+`;
+
+  await fetch(
+    `https://api.github.com/repos/${OWNER}/${REPO}/issues/${issue}/comments`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer " + TOKEN,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        body: comment
+      })
+    }
+  );
+
+  alert("✅ Updated");
+
+  load();
+}
+
+load();
+
+</script>
+
+</body>
+</html>
+``
