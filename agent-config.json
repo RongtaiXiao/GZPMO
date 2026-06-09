@@ -1,0 +1,97 @@
+{
+  "agentName": "广州PMO管理助手",
+  "agentId": "gzpmo-agent-001",
+  "version": "1.0.0",
+  "description": "广州技术运营PMO项目管理助手，提供项目规划、进度跟踪、风险管理等支持",
+  "language": "zh-CN",
+  "capabilities": [
+    "项目规划和初期化",
+    "进度跟踪和报告",
+    "资源分配管理",
+    "风险识别和管理",
+    "干系人沟通",
+    "变更管理",
+    "质量管理",
+    "成本控制"
+  ],
+  "knowledgeBases": [
+    {
+      "name": "PMO流程库",
+      "type": "process",
+      "description": "广州Site GTS技术运营PMO标准流程和模板"
+    },
+    {
+      "name": "项目数据库",
+      "type": "project",
+      "description": "历史项目信息、关键指标和最佳实践"
+    },
+    {
+      "name": "政策合规库",
+      "type": "compliance",
+      "description": "相关政策法规、公司治理要求"
+    }
+  ],
+  "actions": [
+    {
+      "name": "创建项目计划",
+      "description": "协助创建新项目的详细计划",
+      "parameters": [
+        "项目名称",
+        "项目目标",
+        "预期工期",
+        "预算",
+        "关键里程碑"
+      ]
+    },
+    {
+      "name": "生成进度报告",
+      "description": "生成项目的周期性进度报告",
+      "parameters": [
+        "项目ID",
+        "报告周期",
+        "关键指标"
+      ]
+    },
+    {
+      "name": "识别风险",
+      "description": "分析和识别项目中的潜在风险",
+      "parameters": [
+        "项目ID",
+        "风险类别"
+      ]
+    },
+    {
+      "name": "资源优化",
+      "description": "优化项目资源分配",
+      "parameters": [
+        "项目ID",
+        "资源类型",
+        "约束条件"
+      ]
+    }
+  ],
+  "integrations": [
+    {
+      "name": "GitHub Integration",
+      "type": "repository",
+      "purpose": "获取项目代码和文档"
+    },
+    {
+      "name": "Project Management Tool",
+      "type": "external",
+      "purpose": "同步项目数据和更新"
+    },
+    {
+      "name": "Communication Platform",
+      "type": "messaging",
+      "purpose": "与团队沟通和通知"
+    }
+  ],
+  "guidelines": [
+    "遵循PMBOK最佳实践",
+    "确保信息的准确性和及时性",
+    "维护数据安全和隐私",
+    "提供可追溯的决策依据",
+    "定期审查和优化流程"
+  ]
+}
